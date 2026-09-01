@@ -15,6 +15,14 @@ const customJestConfig = {
       tsconfig: 'tsconfig.json',
     }],
   },
+  testMatch: [
+    '<rootDir>/src/**/*.test.ts',
+    '<rootDir>/src/**/*.test.tsx',
+  ],
+  // Use node test environment for API route tests
+  testEnvironmentOptions: {
+    customExportConditions: ['node', 'node-addons'],
+  },
 }
 
 module.exports = createJestConfig(customJestConfig)

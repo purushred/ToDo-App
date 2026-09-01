@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server'
 import { getTodoById, updateTodo, deleteTodo } from '@/lib/todoService'
 import { handleOptions, successResponse, errorResponse } from '@/lib/responseHelpers'
-import { UpdateTodoRequest } from '@/types/todo'
+import { updateTodoSchema, replaceTodoSchema, todoIdSchema } from '@/lib/validations/todo'
+import { ErrorCode, HttpStatus } from '@/types/api-responses'
 
 interface RouteParams {
   params: { id: string }
@@ -13,13 +14,23 @@ interface RouteParams {
  */
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
+    // Validate ID format
+    const idValidation = todoIdSchema.safeParse(params.id)
+    if (!idValidation.success) {
+      return errorResponse(
+        ErrorCode.VALIDATION_ERROR,
+        'Invalid todo ID format',
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
     const todo = await getTodoById(params.id)
 
     if (!todo) {
       return errorResponse(
-        'NotFoundError',
+        ErrorCode.NOT_FOUND,
         `Todo with id ${params.id} not found`,
-        404
+        HttpStatus.NOT_FOUND
       )
     }
 
@@ -30,16 +41,16 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     // Check for connection pool exhaustion
     if (error instanceof Error && error.message.includes('connection')) {
       return errorResponse(
-        'ServiceUnavailable',
+        ErrorCode.SERVICE_UNAVAILABLE,
         'Database connection pool exhausted. Please try again later.',
-        503
+        HttpStatus.SERVICE_UNAVAILABLE
       )
     }
     
     return errorResponse(
-      'DatabaseError',
+      ErrorCode.DATABASE_ERROR,
       'Failed to fetch todo',
-      500
+      HttpStatus.INTERNAL_SERVER_ERROR
     )
   }
 }
@@ -50,75 +61,45 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
  */
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
+    // Validate ID format
+    const idValidation = todoIdSchema.safeParse(params.id)
+    if (!idValidation.success) {
+      return errorResponse(
+        ErrorCode.VALIDATION_ERROR,
+        'Invalid todo ID format',
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
     const existing = await getTodoById(params.id)
     if (!existing) {
       return errorResponse(
-        'NotFoundError',
+        ErrorCode.NOT_FOUND,
         `Todo with id ${params.id} not found`,
-        404
+        HttpStatus.NOT_FOUND
       )
     }
 
     const body = await request.json()
 
-    // Validate title
-    if (!body.title || typeof body.title !== 'string') {
+    // Validate using Zod schema
+    const validationResult = replaceTodoSchema.safeParse(body)
+    
+    if (!validationResult.success) {
+      const errorMessage = validationResult.error.issues[0]?.message || 'Validation failed'
       return errorResponse(
-        'ValidationError',
-        'Title is required and must be a string',
-        400
+        ErrorCode.VALIDATION_ERROR,
+        errorMessage,
+        HttpStatus.BAD_REQUEST
       )
     }
 
-    const trimmedTitle = body.title.trim()
-    if (trimmedTitle.length === 0) {
-      return errorResponse(
-        'ValidationError',
-        'Title cannot be empty',
-        400
-      )
-    }
-
-    if (trimmedTitle.length > 200) {
-      return errorResponse(
-        'ValidationError',
-        'Title must be 200 characters or less',
-        400
-      )
-    }
-
-    // Validate completed
-    if (body.completed !== undefined && typeof body.completed !== 'boolean') {
-      return errorResponse(
-        'ValidationError',
-        'Completed must be a boolean',
-        400
-      )
-    }
-
-    // Validate description
-    if (body.description !== undefined && body.description !== null) {
-      if (typeof body.description !== 'string') {
-        return errorResponse(
-          'ValidationError',
-          'Description must be a string',
-          400
-        )
-      }
-
-      if (body.description.length > 5000) {
-        return errorResponse(
-          'ValidationError',
-          'Description must be 5000 characters or less',
-          400
-        )
-      }
-    }
+    const { title, description, completed } = validationResult.data
 
     const updated = await updateTodo(params.id, {
-      title: trimmedTitle,
-      description: body.description,
-      completed: body.completed || false,
+      title,
+      description,
+      completed,
     })
 
     return successResponse({ data: updated })
@@ -128,25 +109,25 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     // Handle malformed JSON
     if (error instanceof SyntaxError) {
       return errorResponse(
-        'ParseError',
+        ErrorCode.PARSE_ERROR,
         'Invalid JSON in request body',
-        400
+        HttpStatus.BAD_REQUEST
       )
     }
     
     // Check for connection pool exhaustion
     if (error instanceof Error && error.message.includes('connection')) {
       return errorResponse(
-        'ServiceUnavailable',
+        ErrorCode.SERVICE_UNAVAILABLE,
         'Database connection pool exhausted. Please try again later.',
-        503
+        HttpStatus.SERVICE_UNAVAILABLE
       )
     }
     
     return errorResponse(
-      'DatabaseError',
+      ErrorCode.DATABASE_ERROR,
       'Failed to update todo',
-      500
+      HttpStatus.INTERNAL_SERVER_ERROR
     )
   }
 }
@@ -157,87 +138,47 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
  */
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
-    const existing = await getTodoById(params.id)
-    if (!existing) {
+    // Validate ID format
+    const idValidation = todoIdSchema.safeParse(params.id)
+    if (!idValidation.success) {
       return errorResponse(
-        'NotFoundError',
-        `Todo with id ${params.id} not found`,
-        404
+        ErrorCode.VALIDATION_ERROR,
+        'Invalid todo ID format',
+        HttpStatus.BAD_REQUEST
       )
     }
 
-    const body = (await request.json()) as UpdateTodoRequest
-    const updates: Partial<UpdateTodoRequest> = {}
-
-    // Validate and prepare title update
-    if (body.title !== undefined) {
-      if (typeof body.title !== 'string') {
-        return errorResponse(
-          'ValidationError',
-          'Title must be a string',
-          400
-        )
-      }
-
-      const trimmedTitle = body.title.trim()
-      if (trimmedTitle.length === 0) {
-        return errorResponse(
-          'ValidationError',
-          'Title cannot be empty',
-          400
-        )
-      }
-
-      if (trimmedTitle.length > 200) {
-        return errorResponse(
-          'ValidationError',
-          'Title must be 200 characters or less',
-          400
-        )
-      }
-
-      updates.title = trimmedTitle
+    const existing = await getTodoById(params.id)
+    if (!existing) {
+      return errorResponse(
+        ErrorCode.NOT_FOUND,
+        `Todo with id ${params.id} not found`,
+        HttpStatus.NOT_FOUND
+      )
     }
 
-    // Validate and prepare description update
-    if (body.description !== undefined) {
-      if (body.description !== null && typeof body.description !== 'string') {
-        return errorResponse(
-          'ValidationError',
-          'Description must be a string or null',
-          400
-        )
-      }
+    const body = await request.json()
 
-      if (body.description !== null && body.description.length > 5000) {
-        return errorResponse(
-          'ValidationError',
-          'Description must be 5000 characters or less',
-          400
-        )
-      }
-
-      updates.description = body.description
+    // Validate using Zod schema
+    const validationResult = updateTodoSchema.safeParse(body)
+    
+    if (!validationResult.success) {
+      const errorMessage = validationResult.error.issues[0]?.message || 'Validation failed'
+      return errorResponse(
+        ErrorCode.VALIDATION_ERROR,
+        errorMessage,
+        HttpStatus.BAD_REQUEST
+      )
     }
 
-    // Validate and prepare completed update
-    if (body.completed !== undefined) {
-      if (typeof body.completed !== 'boolean') {
-        return errorResponse(
-          'ValidationError',
-          'Completed must be a boolean',
-          400
-        )
-      }
-      updates.completed = body.completed
-    }
+    const updates = validationResult.data
 
     // Check if there's anything to update
     if (Object.keys(updates).length === 0) {
       return errorResponse(
-        'ValidationError',
+        ErrorCode.VALIDATION_ERROR,
         'No valid update fields provided',
-        400
+        HttpStatus.BAD_REQUEST
       )
     }
 
@@ -249,25 +190,25 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     // Handle malformed JSON
     if (error instanceof SyntaxError) {
       return errorResponse(
-        'ParseError',
+        ErrorCode.PARSE_ERROR,
         'Invalid JSON in request body',
-        400
+        HttpStatus.BAD_REQUEST
       )
     }
     
     // Check for connection pool exhaustion
     if (error instanceof Error && error.message.includes('connection')) {
       return errorResponse(
-        'ServiceUnavailable',
+        ErrorCode.SERVICE_UNAVAILABLE,
         'Database connection pool exhausted. Please try again later.',
-        503
+        HttpStatus.SERVICE_UNAVAILABLE
       )
     }
     
     return errorResponse(
-      'DatabaseError',
+      ErrorCode.DATABASE_ERROR,
       'Failed to update todo',
-      500
+      HttpStatus.INTERNAL_SERVER_ERROR
     )
   }
 }
@@ -278,13 +219,23 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
  */
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
+    // Validate ID format
+    const idValidation = todoIdSchema.safeParse(params.id)
+    if (!idValidation.success) {
+      return errorResponse(
+        ErrorCode.VALIDATION_ERROR,
+        'Invalid todo ID format',
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
     const deleted = await deleteTodo(params.id)
 
     if (!deleted) {
       return errorResponse(
-        'NotFoundError',
+        ErrorCode.NOT_FOUND,
         `Todo with id ${params.id} not found`,
-        404
+        HttpStatus.NOT_FOUND
       )
     }
 
@@ -298,16 +249,16 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     // Check for connection pool exhaustion
     if (error instanceof Error && error.message.includes('connection')) {
       return errorResponse(
-        'ServiceUnavailable',
+        ErrorCode.SERVICE_UNAVAILABLE,
         'Database connection pool exhausted. Please try again later.',
-        503
+        HttpStatus.SERVICE_UNAVAILABLE
       )
     }
     
     return errorResponse(
-      'DatabaseError',
+      ErrorCode.DATABASE_ERROR,
       'Failed to delete todo',
-      500
+      HttpStatus.INTERNAL_SERVER_ERROR
     )
   }
 }

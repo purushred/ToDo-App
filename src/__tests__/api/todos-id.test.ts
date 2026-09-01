@@ -16,6 +16,10 @@ function createRouteParams(id: string) {
   return { params: { id } }
 }
 
+// Valid UUIDs for testing
+const VALID_UUID = '123e4567-e89b-12d3-a456-426614174000'
+const NON_EXISTENT_UUID = '123e4567-e89b-12d3-a456-426614174001'
+
 describe('/api/todos/[id]', () => {
   beforeEach(() => {
     jest.clearAllMocks()
@@ -24,7 +28,7 @@ describe('/api/todos/[id]', () => {
   describe('GET', () => {
     it('should return 200 for existing todo', async () => {
       const mockTodo = {
-        id: 'test-id',
+        id: VALID_UUID,
         title: 'Test',
         description: undefined,
         completed: false,
@@ -34,7 +38,7 @@ describe('/api/todos/[id]', () => {
 
       ;(todoService.getTodoById as jest.Mock).mockResolvedValue(mockTodo)
 
-      const response = await GET(createRequest(), createRouteParams('test-id'))
+      const response = await GET(createRequest(), createRouteParams(VALID_UUID))
 
       expect(response.status).toBe(200)
     })
@@ -42,14 +46,20 @@ describe('/api/todos/[id]', () => {
     it('should return 404 for non-existent todo', async () => {
       ;(todoService.getTodoById as jest.Mock).mockResolvedValue(null)
 
-      const response = await GET(createRequest(), createRouteParams('non-existent'))
+      const response = await GET(createRequest(), createRouteParams(NON_EXISTENT_UUID))
 
       expect(response.status).toBe(404)
     })
 
+    it('should return 400 for invalid UUID format', async () => {
+      const response = await GET(createRequest(), createRouteParams('invalid-id'))
+
+      expect(response.status).toBe(400)
+    })
+
     it('should include CORS headers', async () => {
       const mockTodo = {
-        id: 'test-id',
+        id: VALID_UUID,
         title: 'Test',
         description: undefined,
         completed: false,
@@ -59,7 +69,7 @@ describe('/api/todos/[id]', () => {
 
       ;(todoService.getTodoById as jest.Mock).mockResolvedValue(mockTodo)
 
-      const response = await GET(createRequest(), createRouteParams('test-id'))
+      const response = await GET(createRequest(), createRouteParams(VALID_UUID))
 
       expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*')
     })
@@ -68,7 +78,7 @@ describe('/api/todos/[id]', () => {
       const error = new Error('connection pool exhausted')
       ;(todoService.getTodoById as jest.Mock).mockRejectedValue(error)
 
-      const response = await GET(createRequest(), createRouteParams('test-id'))
+      const response = await GET(createRequest(), createRouteParams(VALID_UUID))
 
       expect(response.status).toBe(503)
     })
@@ -77,7 +87,7 @@ describe('/api/todos/[id]', () => {
   describe('PUT', () => {
     it('should return 200 for valid update', async () => {
       const mockTodo = {
-        id: 'test-id',
+        id: VALID_UUID,
         title: 'Test',
         description: undefined,
         completed: false,
@@ -95,7 +105,7 @@ describe('/api/todos/[id]', () => {
       ;(todoService.updateTodo as jest.Mock).mockResolvedValue(updatedTodo)
 
       const request = createRequest({ title: 'Updated', completed: true })
-      const response = await PUT(request, createRouteParams('test-id'))
+      const response = await PUT(request, createRouteParams(VALID_UUID))
 
       expect(response.status).toBe(200)
     })
@@ -104,14 +114,21 @@ describe('/api/todos/[id]', () => {
       ;(todoService.getTodoById as jest.Mock).mockResolvedValue(null)
 
       const request = createRequest({ title: 'Updated' })
-      const response = await PUT(request, createRouteParams('non-existent'))
+      const response = await PUT(request, createRouteParams(NON_EXISTENT_UUID))
 
       expect(response.status).toBe(404)
     })
 
+    it('should return 400 for invalid UUID format', async () => {
+      const request = createRequest({ title: 'Updated' })
+      const response = await PUT(request, createRouteParams('invalid-id'))
+
+      expect(response.status).toBe(400)
+    })
+
     it('should return 400 for missing title', async () => {
       const mockTodo = {
-        id: 'test-id',
+        id: VALID_UUID,
         title: 'Test',
         description: undefined,
         completed: false,
@@ -122,14 +139,14 @@ describe('/api/todos/[id]', () => {
       ;(todoService.getTodoById as jest.Mock).mockResolvedValue(mockTodo)
 
       const request = createRequest({ completed: true })
-      const response = await PUT(request, createRouteParams('test-id'))
+      const response = await PUT(request, createRouteParams(VALID_UUID))
 
       expect(response.status).toBe(400)
     })
 
     it('should return 400 for title exceeding 200 characters', async () => {
       const mockTodo = {
-        id: 'test-id',
+        id: VALID_UUID,
         title: 'Test',
         description: undefined,
         completed: false,
@@ -140,14 +157,14 @@ describe('/api/todos/[id]', () => {
       ;(todoService.getTodoById as jest.Mock).mockResolvedValue(mockTodo)
 
       const request = createRequest({ title: 'a'.repeat(201) })
-      const response = await PUT(request, createRouteParams('test-id'))
+      const response = await PUT(request, createRouteParams(VALID_UUID))
 
       expect(response.status).toBe(400)
     })
 
     it('should return 400 for invalid completed type', async () => {
       const mockTodo = {
-        id: 'test-id',
+        id: VALID_UUID,
         title: 'Test',
         description: undefined,
         completed: false,
@@ -158,7 +175,7 @@ describe('/api/todos/[id]', () => {
       ;(todoService.getTodoById as jest.Mock).mockResolvedValue(mockTodo)
 
       const request = createRequest({ title: 'Valid', completed: 'yes' as any })
-      const response = await PUT(request, createRouteParams('test-id'))
+      const response = await PUT(request, createRouteParams(VALID_UUID))
 
       expect(response.status).toBe(400)
     })
@@ -167,7 +184,7 @@ describe('/api/todos/[id]', () => {
   describe('PATCH', () => {
     it('should return 200 for valid partial update', async () => {
       const mockTodo = {
-        id: 'test-id',
+        id: VALID_UUID,
         title: 'Test',
         description: undefined,
         completed: false,
@@ -184,7 +201,7 @@ describe('/api/todos/[id]', () => {
       ;(todoService.updateTodo as jest.Mock).mockResolvedValue(updatedTodo)
 
       const request = createRequest({ completed: true })
-      const response = await PATCH(request, createRouteParams('test-id'))
+      const response = await PATCH(request, createRouteParams(VALID_UUID))
 
       expect(response.status).toBe(200)
     })
@@ -193,14 +210,21 @@ describe('/api/todos/[id]', () => {
       ;(todoService.getTodoById as jest.Mock).mockResolvedValue(null)
 
       const request = createRequest({ title: 'Updated' })
-      const response = await PATCH(request, createRouteParams('non-existent'))
+      const response = await PATCH(request, createRouteParams(NON_EXISTENT_UUID))
 
       expect(response.status).toBe(404)
     })
 
+    it('should return 400 for invalid UUID format', async () => {
+      const request = createRequest({ title: 'Updated' })
+      const response = await PATCH(request, createRouteParams('invalid-id'))
+
+      expect(response.status).toBe(400)
+    })
+
     it('should return 400 for no update fields', async () => {
       const mockTodo = {
-        id: 'test-id',
+        id: VALID_UUID,
         title: 'Test',
         description: undefined,
         completed: false,
@@ -211,14 +235,14 @@ describe('/api/todos/[id]', () => {
       ;(todoService.getTodoById as jest.Mock).mockResolvedValue(mockTodo)
 
       const request = createRequest({})
-      const response = await PATCH(request, createRouteParams('test-id'))
+      const response = await PATCH(request, createRouteParams(VALID_UUID))
 
       expect(response.status).toBe(400)
     })
 
     it('should return 400 for invalid title type', async () => {
       const mockTodo = {
-        id: 'test-id',
+        id: VALID_UUID,
         title: 'Test',
         description: undefined,
         completed: false,
@@ -229,14 +253,14 @@ describe('/api/todos/[id]', () => {
       ;(todoService.getTodoById as jest.Mock).mockResolvedValue(mockTodo)
 
       const request = createRequest({ title: 123 as any })
-      const response = await PATCH(request, createRouteParams('test-id'))
+      const response = await PATCH(request, createRouteParams(VALID_UUID))
 
       expect(response.status).toBe(400)
     })
 
     it('should return 400 for invalid description type', async () => {
       const mockTodo = {
-        id: 'test-id',
+        id: VALID_UUID,
         title: 'Test',
         description: undefined,
         completed: false,
@@ -247,14 +271,14 @@ describe('/api/todos/[id]', () => {
       ;(todoService.getTodoById as jest.Mock).mockResolvedValue(mockTodo)
 
       const request = createRequest({ description: 123 as any })
-      const response = await PATCH(request, createRouteParams('test-id'))
+      const response = await PATCH(request, createRouteParams(VALID_UUID))
 
       expect(response.status).toBe(400)
     })
 
     it('should return 400 for invalid completed type', async () => {
       const mockTodo = {
-        id: 'test-id',
+        id: VALID_UUID,
         title: 'Test',
         description: undefined,
         completed: false,
@@ -265,7 +289,7 @@ describe('/api/todos/[id]', () => {
       ;(todoService.getTodoById as jest.Mock).mockResolvedValue(mockTodo)
 
       const request = createRequest({ completed: 'yes' as any })
-      const response = await PATCH(request, createRouteParams('test-id'))
+      const response = await PATCH(request, createRouteParams(VALID_UUID))
 
       expect(response.status).toBe(400)
     })
@@ -275,7 +299,7 @@ describe('/api/todos/[id]', () => {
     it('should return 200 for existing todo', async () => {
       ;(todoService.deleteTodo as jest.Mock).mockResolvedValue(true)
 
-      const response = await DELETE(createRequest(), createRouteParams('test-id'))
+      const response = await DELETE(createRequest(), createRouteParams(VALID_UUID))
 
       expect(response.status).toBe(200)
     })
@@ -283,15 +307,21 @@ describe('/api/todos/[id]', () => {
     it('should return 404 for non-existent todo', async () => {
       ;(todoService.deleteTodo as jest.Mock).mockResolvedValue(false)
 
-      const response = await DELETE(createRequest(), createRouteParams('non-existent'))
+      const response = await DELETE(createRequest(), createRouteParams(NON_EXISTENT_UUID))
 
       expect(response.status).toBe(404)
+    })
+
+    it('should return 400 for invalid UUID format', async () => {
+      const response = await DELETE(createRequest(), createRouteParams('invalid-id'))
+
+      expect(response.status).toBe(400)
     })
 
     it('should include CORS headers', async () => {
       ;(todoService.deleteTodo as jest.Mock).mockResolvedValue(true)
 
-      const response = await DELETE(createRequest(), createRouteParams('test-id'))
+      const response = await DELETE(createRequest(), createRouteParams(VALID_UUID))
 
       expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*')
     })

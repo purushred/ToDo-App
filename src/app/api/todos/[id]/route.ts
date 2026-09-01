@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { todoStore } from '@/lib/todoStore'
+import { getTodoById, updateTodo, deleteTodo } from '@/lib/todoService'
 import { handleOptions, successResponse, errorResponse } from '@/lib/responseHelpers'
 import { UpdateTodoRequest } from '@/types/todo'
 
@@ -12,17 +12,36 @@ interface RouteParams {
  * Get a single todo by ID
  */
 export async function GET(request: NextRequest, { params }: RouteParams) {
-  const todo = todoStore.getById(params.id)
+  try {
+    const todo = await getTodoById(params.id)
 
-  if (!todo) {
+    if (!todo) {
+      return errorResponse(
+        'NotFoundError',
+        `Todo with id ${params.id} not found`,
+        404
+      )
+    }
+
+    return successResponse({ data: todo })
+  } catch (error) {
+    console.error('Error fetching todo:', error)
+    
+    // Check for connection pool exhaustion
+    if (error instanceof Error && error.message.includes('connection')) {
+      return errorResponse(
+        'ServiceUnavailable',
+        'Database connection pool exhausted. Please try again later.',
+        503
+      )
+    }
+    
     return errorResponse(
-      'NotFoundError',
-      `Todo with id ${params.id} not found`,
-      404
+      'DatabaseError',
+      'Failed to fetch todo',
+      500
     )
   }
-
-  return successResponse({ data: todo })
 }
 
 /**
@@ -30,16 +49,16 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
  * Replace a todo (full update)
  */
 export async function PUT(request: NextRequest, { params }: RouteParams) {
-  const existing = todoStore.getById(params.id)
-  if (!existing) {
-    return errorResponse(
-      'NotFoundError',
-      `Todo with id ${params.id} not found`,
-      404
-    )
-  }
-
   try {
+    const existing = await getTodoById(params.id)
+    if (!existing) {
+      return errorResponse(
+        'NotFoundError',
+        `Todo with id ${params.id} not found`,
+        404
+      )
+    }
+
     const body = await request.json()
 
     // Validate title
@@ -96,7 +115,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    const updated = todoStore.update(params.id, {
+    const updated = await updateTodo(params.id, {
       title: trimmedTitle,
       description: body.description,
       completed: body.completed || false,
@@ -104,6 +123,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     return successResponse({ data: updated })
   } catch (error) {
+    console.error('Error updating todo:', error)
+    
+    // Handle malformed JSON
     if (error instanceof SyntaxError) {
       return errorResponse(
         'ParseError',
@@ -111,7 +133,21 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         400
       )
     }
-    throw error
+    
+    // Check for connection pool exhaustion
+    if (error instanceof Error && error.message.includes('connection')) {
+      return errorResponse(
+        'ServiceUnavailable',
+        'Database connection pool exhausted. Please try again later.',
+        503
+      )
+    }
+    
+    return errorResponse(
+      'DatabaseError',
+      'Failed to update todo',
+      500
+    )
   }
 }
 
@@ -120,16 +156,16 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
  * Partial update of a todo
  */
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
-  const existing = todoStore.getById(params.id)
-  if (!existing) {
-    return errorResponse(
-      'NotFoundError',
-      `Todo with id ${params.id} not found`,
-      404
-    )
-  }
-
   try {
+    const existing = await getTodoById(params.id)
+    if (!existing) {
+      return errorResponse(
+        'NotFoundError',
+        `Todo with id ${params.id} not found`,
+        404
+      )
+    }
+
     const body = (await request.json()) as UpdateTodoRequest
     const updates: Partial<UpdateTodoRequest> = {}
 
@@ -205,9 +241,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       )
     }
 
-    const updated = todoStore.update(params.id, updates)
+    const updated = await updateTodo(params.id, updates)
     return successResponse({ data: updated })
   } catch (error) {
+    console.error('Error updating todo:', error)
+    
+    // Handle malformed JSON
     if (error instanceof SyntaxError) {
       return errorResponse(
         'ParseError',
@@ -215,7 +254,21 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         400
       )
     }
-    throw error
+    
+    // Check for connection pool exhaustion
+    if (error instanceof Error && error.message.includes('connection')) {
+      return errorResponse(
+        'ServiceUnavailable',
+        'Database connection pool exhausted. Please try again later.',
+        503
+      )
+    }
+    
+    return errorResponse(
+      'DatabaseError',
+      'Failed to update todo',
+      500
+    )
   }
 }
 
@@ -224,20 +277,39 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
  * Delete a todo
  */
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
-  const deleted = todoStore.delete(params.id)
+  try {
+    const deleted = await deleteTodo(params.id)
 
-  if (!deleted) {
+    if (!deleted) {
+      return errorResponse(
+        'NotFoundError',
+        `Todo with id ${params.id} not found`,
+        404
+      )
+    }
+
+    return successResponse({
+      data: null,
+      message: `Todo ${params.id} deleted successfully`,
+    })
+  } catch (error) {
+    console.error('Error deleting todo:', error)
+    
+    // Check for connection pool exhaustion
+    if (error instanceof Error && error.message.includes('connection')) {
+      return errorResponse(
+        'ServiceUnavailable',
+        'Database connection pool exhausted. Please try again later.',
+        503
+      )
+    }
+    
     return errorResponse(
-      'NotFoundError',
-      `Todo with id ${params.id} not found`,
-      404
+      'DatabaseError',
+      'Failed to delete todo',
+      500
     )
   }
-
-  return successResponse({
-    data: null,
-    message: `Todo ${params.id} deleted successfully`,
-  })
 }
 
 /**

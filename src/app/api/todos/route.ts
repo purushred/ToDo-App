@@ -1,18 +1,44 @@
 import { NextRequest } from 'next/server'
-import { todoStore } from '@/lib/todoStore'
+import { createTodo, getAllTodos, getTodoCount } from '@/lib/todoService'
 import { handleOptions, successResponse, errorResponse } from '@/lib/responseHelpers'
 import { CreateTodoRequest } from '@/types/todo'
 
 /**
  * GET /api/todos
- * List all todos
+ * List all todos with pagination support
  */
 export async function GET(request: NextRequest) {
-  const todos = todoStore.getAll()
-  return successResponse({
-    data: todos,
-    count: todos.length,
-  })
+  try {
+    const { searchParams } = new URL(request.url)
+    const cursor = searchParams.get('cursor') || undefined
+    const limit = searchParams.get('limit') ? parseInt(searchParams.get('limit')!) : 100
+
+    const { todos, nextCursor } = await getAllTodos({ cursor, limit })
+    const count = await getTodoCount()
+
+    return successResponse({
+      data: todos,
+      count,
+      nextCursor,
+    })
+  } catch (error) {
+    console.error('Error fetching todos:', error)
+    
+    // Check for connection pool exhaustion
+    if (error instanceof Error && error.message.includes('connection')) {
+      return errorResponse(
+        'ServiceUnavailable',
+        'Database connection pool exhausted. Please try again later.',
+        503
+      )
+    }
+    
+    return errorResponse(
+      'DatabaseError',
+      'Failed to fetch todos',
+      500
+    )
+  }
 }
 
 /**
@@ -68,9 +94,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const todo = todoStore.create(trimmedTitle, body.description)
+    const todo = await createTodo(trimmedTitle, body.description)
     return successResponse({ data: todo }, 201)
   } catch (error) {
+    console.error('Error creating todo:', error)
+    
     // Handle malformed JSON
     if (error instanceof SyntaxError) {
       return errorResponse(
@@ -79,7 +107,21 @@ export async function POST(request: NextRequest) {
         400
       )
     }
-    throw error
+    
+    // Check for connection pool exhaustion
+    if (error instanceof Error && error.message.includes('connection')) {
+      return errorResponse(
+        'ServiceUnavailable',
+        'Database connection pool exhausted. Please try again later.',
+        503
+      )
+    }
+    
+    return errorResponse(
+      'DatabaseError',
+      'Failed to create todo',
+      500
+    )
   }
 }
 

@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server'
 import { createTodo, getAllTodos, getTodoCount } from '@/lib/todoService'
 import { handleOptions, successResponse, errorResponse } from '@/lib/responseHelpers'
-import { CreateTodoRequest } from '@/types/todo'
+import { createTodoSchema, todoListQuerySchema } from '@/lib/validations/todo'
+import { ErrorCode, HttpStatus } from '@/types/api-responses'
 
 /**
  * GET /api/todos
@@ -10,9 +11,22 @@ import { CreateTodoRequest } from '@/types/todo'
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const cursor = searchParams.get('cursor') || undefined
-    const limit = searchParams.get('limit') ? parseInt(searchParams.get('limit')!) : 100
+    
+    // Validate query parameters
+    const queryResult = todoListQuerySchema.safeParse({
+      cursor: searchParams.get('cursor') || undefined,
+      limit: searchParams.get('limit') || undefined,
+    })
 
+    if (!queryResult.success) {
+      return errorResponse(
+        ErrorCode.VALIDATION_ERROR,
+        'Invalid query parameters',
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    const { cursor, limit } = queryResult.data
     const { todos, nextCursor } = await getAllTodos({ cursor, limit })
     const count = await getTodoCount()
 
@@ -20,6 +34,7 @@ export async function GET(request: NextRequest) {
       data: todos,
       count,
       nextCursor,
+      hasMore: !!nextCursor,
     })
   } catch (error) {
     console.error('Error fetching todos:', error)
@@ -27,16 +42,16 @@ export async function GET(request: NextRequest) {
     // Check for connection pool exhaustion
     if (error instanceof Error && error.message.includes('connection')) {
       return errorResponse(
-        'ServiceUnavailable',
+        ErrorCode.SERVICE_UNAVAILABLE,
         'Database connection pool exhausted. Please try again later.',
-        503
+        HttpStatus.SERVICE_UNAVAILABLE
       )
     }
     
     return errorResponse(
-      'DatabaseError',
+      ErrorCode.DATABASE_ERROR,
       'Failed to fetch todos',
-      500
+      HttpStatus.INTERNAL_SERVER_ERROR
     )
   }
 }
@@ -47,80 +62,49 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json() as CreateTodoRequest
+    const body = await request.json()
 
-    // Validate title
-    if (!body.title || typeof body.title !== 'string') {
+    // Validate input using Zod schema
+    const validationResult = createTodoSchema.safeParse(body)
+    
+    if (!validationResult.success) {
+      const errorMessage = validationResult.error.issues[0]?.message || 'Validation failed'
       return errorResponse(
-        'ValidationError',
-        'Title is required and must be a string',
-        400
+        ErrorCode.VALIDATION_ERROR,
+        errorMessage,
+        HttpStatus.BAD_REQUEST
       )
     }
 
-    const trimmedTitle = body.title.trim()
-    if (trimmedTitle.length === 0) {
-      return errorResponse(
-        'ValidationError',
-        'Title cannot be empty',
-        400
-      )
-    }
-
-    if (trimmedTitle.length > 200) {
-      return errorResponse(
-        'ValidationError',
-        'Title must be 200 characters or less',
-        400
-      )
-    }
-
-    // Validate description if provided
-    if (body.description !== undefined && body.description !== null) {
-      if (typeof body.description !== 'string') {
-        return errorResponse(
-          'ValidationError',
-          'Description must be a string',
-          400
-        )
-      }
-
-      if (body.description.length > 5000) {
-        return errorResponse(
-          'ValidationError',
-          'Description must be 5000 characters or less',
-          400
-        )
-      }
-    }
-
-    const todo = await createTodo(trimmedTitle, body.description)
-    return successResponse({ data: todo }, 201)
+    const { title, description } = validationResult.data
+    const todo = await createTodo(title, description || undefined)
+    
+    return successResponse({ data: todo }, HttpStatus.CREATED)
   } catch (error) {
     console.error('Error creating todo:', error)
     
     // Handle malformed JSON
     if (error instanceof SyntaxError) {
       return errorResponse(
-        'ParseError',
+        ErrorCode.PARSE_ERROR,
         'Invalid JSON in request body',
-        400
+        HttpStatus.BAD_REQUEST
       )
     }
     
     // Check for connection pool exhaustion
     if (error instanceof Error && error.message.includes('connection')) {
       return errorResponse(
-        'ServiceUnavailable',
+        ErrorCode.SERVICE_UNAVAILABLE,
         'Database connection pool exhausted. Please try again later.',
-        503
+        HttpStatus.SERVICE_UNAVAILABLE
       )
     }
     
     return errorResponse(
-      'DatabaseError',
+      ErrorCode.DATABASE_ERROR,
       'Failed to create todo',
-      500
+      HttpStatus.INTERNAL_SERVER_ERROR
     )
   }
 }
